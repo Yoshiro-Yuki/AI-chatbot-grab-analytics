@@ -1,19 +1,20 @@
-
-import pandas as pd
-import joblib
-import numpy as np
-from google.colab import userdata
+import os
 import json
+import pandas as pd
 from openai import OpenAI
+import streamlit as st
 
 # Load model data
-def process_matrix_for_llm():
-  df = pd.read_csv('da_rfc_temps.csv').to_dict()
-  return json.dumps(df, indent=2)
+def process_matrix_for_llm(csv_path: str = 'da_rfc_temps.csv') -> str:
+    try:
+        df = pd.read_csv(csv_path).to_dict()
+        return json.dumps(df, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "data_file_not_found", "error": str(e)})
 
 # Load llm prompt
-def build_system_prompt(json_data):
-  SYSTEM_PROMPT = """IDENTITY & ROLE
+def build_system_prompt(json_data: str) -> str:
+    SYSTEM_PROMPT = f"""IDENTITY & ROLE
     You are Aria, a Strategy & Prescriptive Analytics Facilitator and an assistant for a data scientist in Grab. 
     Your inputs are pre-calculated Descriptive (What happened) and Predictive (What will happen) analytics. Your job is NOT to re-calculate data, but to act as a thought partner to help stakeholders make data-backed, high-impact strategic decisions (What should we do).
 
@@ -63,18 +64,30 @@ def build_system_prompt(json_data):
     - Always challenge assumptions constructively if a stakeholder chooses a high-risk or low-impact option.
     - Memory Continuity: Refer directly to the specific options proposed in the immediate previous assistant message. If the user picks an option (e.g., "Option B"), do not re-ask which option they mean—proceed directly to building Step 4 (Action Plan) for that specific option."""
 
-  return SYSTEM_PROMPT
+    return SYSTEM_PROMPT
+
 
 class Aria:
-  def __init__(self, api_key) -> None:
-    self.client = OpenAI(
-      base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-      api_key=api_key)
-    
-  def generate_response (self, message_history):
-    response = self.client.chat.completions.create(
-      model='gemini-3.5-flash-lite',
-      messages=message_history,
-      temperature=0.7)
-    
-    return response.choices[0].message.content
+    def __init__(self, api_key: str = None) -> None:
+        # Resolves key safely from Streamlit Secrets, environment, or passed parameter
+        resolved_key = (
+            api_key 
+            or os.environ.get("GEMINI_API_KEY") 
+            or getattr(st, "secrets", {}).get("GEMINI_API_KEY", None)
+        )
+        
+        if not resolved_key:
+            raise ValueError("GEMINI_API_KEY missing! Add it to Streamlit Cloud Secrets.")
+
+        self.client = OpenAI(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=resolved_key
+        )
+
+    def generate_response(self, message_history: list) -> str:
+        response = self.client.chat.completions.create(
+            model='gemini-3.5-flash-lite',
+            messages=message_history,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
