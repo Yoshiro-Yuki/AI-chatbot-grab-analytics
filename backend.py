@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from google.colab import userdata
 import json
 from openai import OpenAI, RateLimitError, APIError
 from groq import Groq, GroqError
