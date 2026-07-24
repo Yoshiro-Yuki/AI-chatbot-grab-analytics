@@ -245,7 +245,7 @@ for message in st.session_state.messages:
 
 # Trigger initial prompt if starting fresh
 if len(st.session_state.messages) == 1:
-    initial_user_prompt = "Paki-summarize ang key risk windows natin base sa Random Forest probabilities at bigyan mo ako ng prescriptive options."
+    initial_user_prompt = "Hey there! I'm new here. Can you introduce yourself and tell me what you do?"
     st.session_state.messages.append({"role": "user", "content": initial_user_prompt})
     
     with st.chat_message("user", avatar="👤"):
