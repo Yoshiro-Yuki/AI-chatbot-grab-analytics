@@ -73,17 +73,17 @@ class Aria:
         api_key=groq_key
     )
 
+    self.system_prompt = build_system_prompt(process_matrix_for_llm())
+
   def converse(self, message_history=None):
     if message_history is None:
       message_history = []
 
-    if not message_history:
-      message_history = [{
-                "role": "user",
-                "content": "Hello, can you greet me back? (Just a warm greeting, no analytics yet, and in all english)"
-            }]
-    full_payload = [{'role':'system','content':SYSTEM_PROMPT}] + message_history
-
+    if message_history and message_history[0].get("role") == "system":
+        full_payload = message_history
+    else:
+        full_payload = [{'role': 'system', 'content': self.system_prompt}] + message_history
+      
     try:
       response = self.client.chat.completions.create(
         model='gemini-3.5-flash-lite',
