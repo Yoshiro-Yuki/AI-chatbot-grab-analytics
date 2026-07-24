@@ -3,10 +3,9 @@ import json
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from google.colab import userdata
 
 # Import backend logic engine
-from bot_engine import process_matrix_for_llm, build_system_prompt, AriaChatbot
+from backend import process_matrix_for_llm, build_system_prompt, Aria
 
 # ---------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM STYLING
@@ -50,19 +49,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# 2. INITIALIZATION & DATA SETUP
+# 2. SAFE API KEY RETRIEVAL (Render & Local Env friendly)
 # ---------------------------------------------------------------------------
-try:
-    gemini_key = userdata.get('GEMINI_API_KEY')
-except Exception:
-    gemini_key = os.getenv("GEMINI_API_KEY")
+def get_api_key(key_name: str) -> str:
+    """Retrieve API key safely across Render, local environment, and Google Colab."""
+    # 1. Try standard environment variables first (Render / Docker / .env)
+    key = os.getenv(key_name)
+    if key:
+        return key
 
-if not gemini_key:
-    st.error("🔑 GEMINI_API_KEY not found! Please set it in Secrets or environment variables.")
+    # 2. Fallback: Check Google Colab user data if available
+    try:
+        from google.colab import userdata
+        return userdata.get(key_name)
+    except (ImportError, Exception):
+        pass
+
+    return None
+
+gemini_key = get_api_key('GEMINI_API_KEY')
+groq_key = get_api_key('GROQ_API_KEY')
+
+if not gemini_key or not groq_key:
+    st.error("🔑 API Key Error: Missing `GEMINI_API_KEY` or `GROQ_API_KEY`. Please configure them under **Environment** settings in Render.")
     st.stop()
 
-# Instantiate Chatbot Engine
-bot_engine = AriaChatbot(api_key=gemini_key)
+# Instantiate Chatbot Engine with both keys
+bot_engine = Aria(gemini_key=gemini_key, groq_key=groq_key)
 
 # Load Sample Raw Data
 raw_data = {
@@ -105,11 +118,9 @@ geometric_ball_html = """
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
 
-        // Golden Ratio for Icosahedron Vertices
         const phi = (1 + Math.sqrt(5)) / 2;
         const radius = 65;
 
-        // Create 12 vertices of an icosahedron
         let vertices = [
             [-1,  phi, 0], [ 1,  phi, 0], [-1, -phi, 0], [ 1, -phi, 0],
             [0, -1,  phi], [0,  1,  phi], [0, -1, -phi], [0,  1, -phi],
@@ -119,7 +130,6 @@ geometric_ball_html = """
             return [v[0]/len * radius, v[1]/len * radius, v[2]/len * radius];
         });
 
-        // 30 Edges connecting the icosahedron vertices
         const edges = [
             [0,1],[0,5],[0,7],[0,10],[0,11],[1,5],[1,7],[1,8],[1,9],[2,3],
             [2,4],[2,6],[2,10],[2,11],[3,4],[3,6],[3,8],[3,9],[4,5],[4,9],
@@ -131,7 +141,6 @@ geometric_ball_html = """
         let pulse = 0;
 
         function project(x, y, z) {
-            // Simple perspective projection
             let scale = 280 / (280 + z);
             return {
                 x: cx + x * scale,
@@ -142,15 +151,12 @@ geometric_ball_html = """
 
         function rotate() {
             pulse += 0.03;
-            let currentPulse = 1 + Math.sin(pulse) * 0.05; // Gentle breath pulse
+            let currentPulse = 1 + Math.sin(pulse) * 0.05;
 
-            // Rotate coordinates
             vertices = vertices.map(([x, y, z]) => {
-                // Y rotation
                 let x1 = x * Math.cos(angleY) + z * Math.sin(angleY);
                 let z1 = -x * Math.sin(angleY) + z * Math.cos(angleY);
                 
-                // X rotation
                 let y2 = y * Math.cos(angleX) - z1 * Math.sin(angleX);
                 let z2 = y * Math.sin(angleX) + z1 * Math.cos(angleX);
                 
@@ -159,7 +165,6 @@ geometric_ball_html = """
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Edges
             edges.forEach(([i, j]) => {
                 let p1 = project(vertices[i][0] * currentPulse, vertices[i][1] * currentPulse, vertices[i][2] * currentPulse);
                 let p2 = project(vertices[j][0] * currentPulse, vertices[j][1] * currentPulse, vertices[j][2] * currentPulse);
@@ -168,7 +173,6 @@ geometric_ball_html = """
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
                 
-                // Dynamic gradient opacity based on depth
                 let avgZ = (vertices[i][2] + vertices[j][2]) / 2;
                 let alpha = Math.max(0.25, Math.min(1, (avgZ + radius) / (2 * radius)));
                 
@@ -177,7 +181,6 @@ geometric_ball_html = """
                 ctx.stroke();
             });
 
-            // Draw Vertices (Glow Nodes)
             vertices.forEach(([x, y, z]) => {
                 let p = project(x * currentPulse, y * currentPulse, z * currentPulse);
                 ctx.beginPath();
@@ -228,10 +231,9 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # 6. CHAT INITIALIZATION & EXECUTION
 # ---------------------------------------------------------------------------
-# Initialize System Prompt and Chat Memory
 if "messages" not in st.session_state or len(st.session_state.messages) == 0:
-    processed_summary = process_matrix_for_llm(raw_df)
-    system_prompt = build_system_prompt(json.dumps(processed_summary, indent=2))
+    processed_summary = process_matrix_for_llm()
+    system_prompt = build_system_prompt(processed_summary)
     st.session_state.messages = [{"role": "system", "content": system_prompt}]
 
 # Render Chat History
@@ -251,7 +253,7 @@ if len(st.session_state.messages) == 1:
 
     with st.chat_message("assistant", avatar="🚗"):
         with st.spinner("Aria is analyzing predictive probabilities and Grab metrics..."):
-            reply = bot_engine.generate_response(st.session_state.messages)
+            reply = bot_engine.converse(st.session_state.messages)
             st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
@@ -266,7 +268,7 @@ if user_input := st.chat_input("Ask Aria or select a strategic path..."):
     with st.chat_message("assistant", avatar="🚗"):
         with st.spinner("Aria is formulating strategic options..."):
             try:
-                reply = bot_engine.generate_response(st.session_state.messages)
+                reply = bot_engine.converse(st.session_state.messages)
                 st.markdown(reply)
                 st.session_state.messages.append({"role": "assistant", "content": reply})
             except Exception as e:
