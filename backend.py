@@ -3,11 +3,26 @@ import numpy as np
 import json
 from openai import OpenAI, RateLimitError, APIError
 from groq import Groq, GroqError
+import speech_recognition  as sr
 
 # Load model data
 def process_matrix_for_llm():
   df = pd.read_csv('da_rfc_temps.csv').to_dict()
   return json.dumps(df, indent=2)
+
+def transcribe_voice_from_file(audio_file): 
+    recognizer = sr.Recognizer()
+
+    with sr.AudioFile(audio_file) as source:
+        audio_data = recognizer.record(source)
+        try: 
+            text = recognizer.recognize_google(audio_data)
+            return text
+        except sr.UnknownValueError:
+            return f'Could not understand the audio'
+        except Exception as e:
+            return f'Error occured ({e})'
+
 
 # Load llm prompt
 def build_system_prompt(json_data):
